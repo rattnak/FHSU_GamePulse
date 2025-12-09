@@ -1,0 +1,200 @@
+// Prisma schema for FHSU GamePulse with PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User roles enum
+enum UserRole {
+  GUEST
+  ADMIN
+}
+
+// Event attendance status
+enum AttendanceStatus {
+  PENDING
+  CHECKED_IN
+  NO_SHOW
+}
+
+// User model - both guests and admins
+model User {
+  id                String              @id @default(uuid())
+  clerkId           String              @unique
+  email             String              @unique
+  firstName         String?
+  lastName          String?
+  role              UserRole            @default(GUEST)
+  profileImageUrl   String?
+
+  // Push notification settings
+  pushToken         String?             @unique
+  notificationsEnabled Boolean          @default(true)
+
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  lastActiveAt      DateTime?
+
+  // Relations
+  eventAttendance   EventAttendance[]
+  createdInvitations AdminInvitation[]  @relation("InvitationCreator")
+  receivedInvitation AdminInvitation?   @relation("InvitationRecipient")
+
+  @@index([clerkId])
+  @@index([email])
+  @@index([role])
+}
+
+// Admin invitation system
+model AdminInvitation {
+  id              String    @id @default(uuid())
+  inviteCode      String    @unique
+  email           String?   // Optional: can specify email
+
+  // Creator (existing admin)
+  createdById     String
+  createdBy       User      @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  // Recipient (new admin)
+  usedById        String?   @unique
+  usedBy          User?     @relation("InvitationRecipient", fields: [usedById], references: [id])
+
+  // Status
+  isUsed          Boolean   @default(false)
+  expiresAt       DateTime?
+  usedAt          DateTime?
+
+  createdAt       DateTime  @default(now())
+
+  @@index([inviteCode])
+  @@index([createdById])
+}
+
+// Facility model
+model Facility {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  blueprint String?  // URL to SVG/PNG or stored asset
+  address   String?
+  capacity  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    Event[]
+
+  @@index([slug])
+}
+
+// Event model
+model Event {
+  id              String            @id @default(uuid())
+  title           String
+  type            String            // sport, commencement, community
+  description     String?
+  imageUrl        String?
+
+  // Facility relation
+  facilityId      String
+  facility        Facility          @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  // Timing
+  startTime       DateTime
+  endTime         DateTime
+
+  // Live event controls
+  isLive          Boolean           @default(false)
+  qrCodeUrl       String?           // pre-generated QR code URL
+
+  // Flash screen settings (admin controlled)
+  flashEnabled    Boolean           @default(false)
+  flashInterval   Int               @default(3000) // milliseconds between flashes
+  flashColor1     String            @default("#FDB913") // FHSU Gold
+  flashColor2     String            @default("#000000") // Black
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  attendance      EventAttendance[]
+  flashLogs       FlashLog[]
+
+  @@index([isLive])
+  @@index([startTime])
+  @@index([facilityId])
+}
+
+// Event attendance tracking
+model EventAttendance {
+  id            String            @id @default(uuid())
+
+  // Relations
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventId       String
+  event         Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Attendance details
+  status        AttendanceStatus  @default(PENDING)
+  checkedInAt   DateTime?
+  checkOutAt    DateTime?
+
+  // Device info (for flash sync)
+  deviceInfo    Json?             // platform, version, etc.
+  sessionId     String?           // Socket.io session for flash sync
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Flash log for analytics
+model FlashLog {
+  id              String    @id @default(uuid())
+
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  triggeredBy     String?   // Admin user ID who triggered
+  triggeredAt     DateTime  @default(now())
+
+  // Flash details
+  duration        Int       // milliseconds
+  pattern         String?   // flash pattern type
+  activeUsers     Int       @default(0) // count of users who saw the flash
+
+  @@index([eventId])
+  @@index([triggeredAt])
+}
+
+// Notification log
+model NotificationLog {
+  id          String    @id @default(uuid())
+
+  // Target
+  userId      String?   // null = broadcast to all
+  eventId     String?   // related event
+
+  // Message
+  title       String
+  body        String
+  data        Json?     // additional data
+
+  // Delivery
+  sentAt      DateTime  @default(now())
+  deliveryStatus String @default("sent") // sent, delivered, failed
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([sentAt])
+}
