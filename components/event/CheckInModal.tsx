@@ -13,6 +13,7 @@ import { Colors, Spacing, FontSizes, BorderRadius } from '@/constants/theme';
 import { useSocket } from '@/hooks/useSocket';
 import { useUserStore } from '@/stores/userStore';
 import * as Device from 'expo-constants';
+import QRScanner from '../shared/QRScanner';
 
 interface CheckInModalProps {
   visible: boolean;
@@ -35,6 +36,7 @@ export default function CheckInModal({ visible, event, onClose, onCheckIn }: Che
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   const handleCheckIn = async () => {
     if (!user) {
@@ -87,6 +89,28 @@ export default function CheckInModal({ visible, event, onClose, onCheckIn }: Che
     }
   };
 
+  const handleQRScan = (eventId: string) => {
+    setShowQRScanner(false);
+    // Verify the scanned QR code matches this event
+    if (eventId === event.id) {
+      handleCheckIn();
+    } else {
+      setError('This QR code is for a different event');
+    }
+  };
+
+  // Show QR Scanner modal
+  if (showQRScanner) {
+    return (
+      <Modal visible={visible} animationType="slide">
+        <QRScanner
+          onScan={handleQRScan}
+          onClose={() => setShowQRScanner(false)}
+        />
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -130,22 +154,34 @@ export default function CheckInModal({ visible, event, onClose, onCheckIn }: Che
           {/* Error message */}
           {error && <Text style={styles.error}>{error}</Text>}
 
-          {/* Check-in button */}
+          {/* Check-in buttons */}
           {!isCheckedIn && (
-            <TouchableOpacity
-              style={[styles.checkInButton, isLoading && styles.buttonDisabled]}
-              onPress={handleCheckIn}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={Colors.fhsuBlack} />
-              ) : (
-                <>
-                  <Ionicons name="flash" size={24} color={Colors.fhsuBlack} />
-                  <Text style={styles.checkInButtonText}>Check In</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[styles.checkInButton, isLoading && styles.buttonDisabled]}
+                onPress={handleCheckIn}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={Colors.fhsuBlack} />
+                ) : (
+                  <>
+                    <Ionicons name="flash" size={24} color={Colors.fhsuBlack} />
+                    <Text style={styles.checkInButtonText}>Check In</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* QR Code Scan Option */}
+              <TouchableOpacity
+                style={styles.qrButton}
+                onPress={() => setShowQRScanner(true)}
+                disabled={isLoading}
+              >
+                <Ionicons name="qr-code-outline" size={20} color={Colors.fhsuGold} />
+                <Text style={styles.qrButtonText}>Scan QR Code</Text>
+              </TouchableOpacity>
+            </>
           )}
 
           {/* Success message */}
@@ -260,5 +296,21 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  qrButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: Colors.fhsuGold,
+    backgroundColor: 'transparent',
+  },
+  qrButtonText: {
+    fontSize: FontSizes.md,
+    fontWeight: '600',
+    color: Colors.fhsuGold,
   },
 });
