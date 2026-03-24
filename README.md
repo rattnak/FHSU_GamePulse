@@ -1,102 +1,149 @@
 # FHSU GamePulse
 
-A comprehensive event management and real-time engagement platform designed to revolutionize the campus experience at Fort Hays State University. FHSU GamePulse transforms passive event attendance into an interactive, synchronized experience through mobile technology and real-time communication.
+A mobile event engagement platform for Fort Hays State University. GamePulse lets attendees participate in synchronized light shows during live campus events — sporting games, commencement ceremonies, and community gatherings — by flashing their phone screens in coordinated patterns controlled by admins in real time.
 
-## Overview
+## What It Does
 
-FHSU GamePulse is a full-stack Progressive Web Application that combines event management, attendance tracking, and real-time crowd engagement features. The platform enables thousands of attendees to participate in coordinated experiences during live events, creating an electrifying unified atmosphere for sporting events, commencement ceremonies, and community gatherings.
+When an event goes live, an admin can trigger a flash sequence from the app. Every attendee who has checked in receives the signal via WebSocket and their screen flashes in the configured color and pattern simultaneously. The result is a coordinated crowd light display across thousands of devices.
 
-### Key Features
+Beyond flash sync, the app handles the full event lifecycle: browsing upcoming events, QR code check-in, real-time attendee counts, admin invitations, and push notification support.
 
-**Real-Time Flash Synchronization**
-- Synchronized screen flashing across thousands of devices simultaneously
-- Sub-100ms latency for coordinated crowd displays
-- Configurable patterns, colors, and intervals
-- Creates unified visual experiences during game highlights and celebrations
+## Architecture
 
-**Comprehensive Event Management**
-- Complete event lifecycle management (creation, updates, live status)
-- Support for multiple event categories (sports, commencement, community)
-- Facility association with venue capacity tracking
-- QR code generation for streamlined check-ins
+The project is a monorepo with two parts:
 
-**Smart Attendance Tracking**
-- Instant check-in/check-out with sub-second processing
-- Real-time attendee counts via WebSocket
-- Session-based tracking for flash participation
-- Comprehensive attendance history and analytics
+- **Frontend** — React Native (Expo) mobile app for iOS, Android, and web
+- **Backend** — Node.js/Express API server with Socket.io for real-time communication
 
-**Role-Based Access Control**
-- Two-tier permission system (Guest and Admin)
-- Secure invitation-based admin promotion
-- Database-enforced authorization on all endpoints
-- Auto-promotion for designated administrator emails
-
-**Modern PWA Experience**
-- Offline-first architecture for unreliable network conditions
-- Push notification support for event updates
-- Installable on iOS, Android, and desktop
-- Responsive design optimized for all screen sizes
+```
+fhsu_gamepulse/
+├── app/                  # Expo Router screens
+├── components/
+│   ├── admin/            # Admin controls (EventControl, TriggerButton, LiveDeviceCount, AnnouncementForm)
+│   ├── auth/             # Auth components (VerificationCode, SetPassword)
+│   ├── event/            # Event UI (EventCard, EventList, FlashScreen, CheckInModal, CountdownTimer)
+│   ├── facility/         # Venue components (FacilityCard, FacilityList, InteractiveMap, SeatingChart)
+│   ├── game/             # Game UI (FlashController, FlashAnimation, GameStatus, Scoreboard, TeamColor)
+│   ├── profile/          # Profile views (GuestProfileView, AdminDashboardView)
+│   ├── shared/           # Shared UI (Header, QRScanner, NetworkStatus, TabNavigation)
+│   └── ui/               # Base UI primitives (Button, Card, Input, Toast, LoadingSpinner)
+└── backend/
+    └── src/
+        ├── index.ts      # Express + Socket.io server
+        └── routes/
+            ├── events.ts      # Event CRUD + flash settings + flash logs
+            ├── attendance.ts  # Check-in/check-out + attendance queries
+            ├── users.ts       # User sync, role management, push tokens
+            └── invitations.ts # Admin invitation generation and acceptance
+```
 
 ## Technology Stack
 
 ### Frontend
-- **React Native** with Expo SDK 54 - Cross-platform mobile development
-- **TypeScript** - Type-safe development with enhanced maintainability
-- **Expo Router** - File-based navigation with deep linking
-- **Zustand** - Lightweight state management
-- **Socket.io Client** - Real-time WebSocket communication
-- **Clerk** - Modern authentication with OAuth support
+- **React Native** with Expo SDK 54
+- **TypeScript**
+- **Expo Router** — file-based navigation with deep linking
+- **Clerk (`@clerk/clerk-expo`)** — authentication (email/password + OAuth)
+- **Socket.io Client** — real-time WebSocket communication
+- **Zustand** — state management
 
 ### Backend
-- **Node.js** (v18+) with Express.js - RESTful API server
-- **TypeScript** - Full-stack type safety
-- **Socket.io** - Real-time bidirectional communication
-- **PostgreSQL** - Enterprise-grade relational database (Supabase)
-- **Prisma** - Type-safe ORM with automatic migrations
+- **Node.js** + **Express.js** — REST API
+- **TypeScript**
+- **Socket.io** — real-time bidirectional communication (flash sync, attendee counts, notifications)
+- **Prisma** — ORM with PostgreSQL
+- **Supabase** — PostgreSQL hosting
 
-### Infrastructure
-- **Supabase** - PostgreSQL hosting with connection pooling
-- **Clerk** - Authentication and user management
-- **Expo** - Build, deploy, and iterate quickly
+## Database Schema
+
+Seven tables managed by Prisma:
+
+| Table | Purpose |
+|---|---|
+| `User` | Accounts with `GUEST` or `ADMIN` role, synced from Clerk |
+| `Event` | Campus events with timing, flash color config, live status, and QR code URL |
+| `Facility` | Event venues with address and capacity |
+| `EventAttendance` | Check-in records with status (`PENDING`, `CHECKED_IN`, `NO_SHOW`) and device info |
+| `AdminInvitation` | One-time invite codes for promoting users to admin |
+| `FlashLog` | Audit log of every flash trigger (who, when, how many users) |
+| `NotificationLog` | Record of push notifications sent |
+
+## API Endpoints
+
+### Events — `/api/events`
+- `GET /` — list events (filter by `?isLive=true` or `?upcoming=true`)
+- `GET /:id` — event detail with checked-in attendees
+- `PATCH /:id/live` — toggle event live status
+- `PATCH /:id/flash-settings` — update flash color/interval config
+- `POST /:id/flash-log` — record a flash trigger
+
+### Attendance — `/api/attendance`
+- `POST /check-in` — check user into a live event
+- `POST /check-out` — check user out
+- `GET /event/:eventId` — list attendees for an event
+- `GET /event/:eventId/count` — get total and checked-in counts
+- `GET /user/:userId` — user's full attendance history
+- `GET /user/:userId/event/:eventId` — user's status for a specific event
+
+### Users — `/api/users`
+- `POST /sync` — upsert Clerk user into the database
+- `GET /clerk/:clerkId` — fetch user with recent attendance
+- `PATCH /:id/role` — change user role (`GUEST` / `ADMIN`)
+- `POST /:id/push-token` — register Expo push token
+- `PATCH /:id/notifications` — toggle notification preference
+- `GET /admins` — list all admin users
+- `GET /admins/count` — count of admins
+
+### Invitations — `/api/invitations`
+- `POST /generate` — create a 16-character invite code (admin only)
+- `GET /:inviteCode` — validate an invite code
+- `POST /:inviteCode/accept` — accept invite and promote user to admin
+- `GET /user/:userId/created` — list invites created by a user
+
+## WebSocket Events (Socket.io)
+
+| Event (client → server) | Description |
+|---|---|
+| `joinEvent` | Join an event room; broadcasts updated attendee count |
+| `leaveEvent` | Leave an event room; updates attendee count |
+| `triggerFlash` | Admin triggers flash for all users in event room |
+| `updateFlashSettings` | Admin pushes new flash config to all clients |
+| `sendEventNotification` | Admin broadcasts a notification message |
+| `getActiveCount` | Request current active count for an event |
+
+| Event (server → client) | Description |
+|---|---|
+| `flash` | Flash payload with color, duration, pattern, timestamp |
+| `flashSettingsUpdated` | Updated flash interval/color config |
+| `attendeeCountUpdate` | Live attendee count for an event |
+| `notification` | Announcement title and body |
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18.x or higher
-- npm or yarn package manager
-- Expo CLI (optional, recommended)
+- Node.js 18+
+- A [Clerk](https://clerk.com) account for authentication
+- A [Supabase](https://supabase.com) project for PostgreSQL
 
-### Installation
+### 1. Clone and install
 
 ```bash
-# Clone repository
 git clone https://github.com/rattnak/FHSU_GamePulse.git
 cd FHSU_GamePulse
 
-# Install frontend dependencies
+# Frontend
 npm install
 
-# Install backend dependencies
-cd backend
-npm install
-
-# Generate Prisma client
-npx prisma generate
+# Backend
+cd backend && npm install
 ```
 
-### Configuration
+### 2. Configure environment
 
-Create `.env` files:
-
-**Frontend `.env`:**
+**Root `.env`** (used by both frontend and backend):
 ```env
-EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
 EXPO_PUBLIC_API_URL=http://localhost:3000
-```
-
-**Backend `.env`:**
-```env
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 PORT=3000
 NODE_ENV=development
@@ -104,131 +151,54 @@ ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006
 APP_URL=exp://localhost:8081
 ```
 
-### Running the Application
+### 3. Set up the database
 
-**Start Backend:**
 ```bash
 cd backend
-npm run dev
+npx prisma migrate dev
+npx prisma generate
 ```
 
-**Start Frontend:**
+### 4. Run
+
 ```bash
-# In root directory
+# Terminal 1 — backend
+cd backend && npm run dev
+
+# Terminal 2 — frontend
 npm start
-
-# Then press:
-# - 'i' for iOS Simulator
-# - 'a' for Android Emulator
-# - Scan QR code with Expo Go for physical device
+# Press 'i' for iOS Simulator, 'a' for Android, or scan QR with Expo Go
 ```
-
-## Core Functionality
-
-### For All Users (Guest & Admin)
-- Browse upcoming and live campus events
-- View detailed event information (time, location, description)
-- Real-time flash synchronization during live events
-- Interactive countdown timers for upcoming events
-- Push notification support for event updates
-- Secure authentication (email/password or Google OAuth)
-- WCAG 2.1 Level AA accessible interface
-
-### For Administrators
-- Complete event management (create, update, delete)
-- Real-time attendance tracking and analytics
-- User role management and admin invitations
-- Flash control system for synchronized displays
-- Facility management for event venues
-- Comprehensive dashboard with statistics
-
-### For Guest Users
-- Event check-in via QR code scanning
-- Personal attendance history
-- Event notifications and reminders
-- Profile management and settings
-
-## Database Schema
-
-Seven interconnected tables ensure data integrity:
-- **User** - Accounts with role assignment and auth integration
-- **Event** - Campus events with timing and flash configuration
-- **Facility** - Event venues with capacity metadata
-- **EventAttendance** - Check-in records with session tracking
-- **AdminInvitation** - Secure codes for admin promotion
-- **FlashLog** - Audit trail of synchronization events
-- **NotificationLog** - Push notification history
-
-## Security & Performance
-
-### Security Features
-- Environment-based configuration for sensitive credentials
-- Row-level security policies via Prisma
-- Role-based API authorization with server-side validation
-- CORS protection with configurable origins
-- Secure password requirements via Clerk
-- Cryptographically secure invitation codes (32-character entropy)
-
-### Performance Optimizations
-- Connection pooling via Supabase for optimal throughput
-- Strategic database indexing on frequently queried columns
-- WebSocket room-based broadcasting to minimize traffic
-- Type-safe queries eliminating runtime errors
-- Non-blocking async I/O for thousands of concurrent connections
-
-## API Documentation
-
-### RESTful Endpoints
-- **Authentication**: User sync, role management
-- **Events**: CRUD operations, live status control
-- **Attendance**: Check-in/out, attendee counts
-- **Invitations**: Admin promotion system
-
-### WebSocket Events
-- **Flash synchronization**: Real-time broadcast to all attendees
-- **Attendee counts**: Live updates during events
-- **Settings updates**: Dynamic flash configuration
-- **Notifications**: Event-specific announcements
 
 ## Development
 
-### Database Management
 ```bash
-# View database in browser
+# View/edit database in browser
 npx prisma studio
 
-# Create migration
-npx prisma migrate dev --name migration_name
-
-# Reset database
-npx prisma migrate reset
-```
-
-### Type Checking
-```bash
-# Frontend
+# Type-check frontend
 npx tsc --noEmit
 
-# Backend
+# Type-check backend
 cd backend && npx tsc --noEmit
 ```
 
-## Contributing
+## User Roles
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-MIT License - See LICENSE file for details
-
-## Contact
-
-**Project Repository**: [https://github.com/rattnak/FHSU_GamePulse](https://github.com/rattnak/FHSU_GamePulse)
+| Capability | Guest | Admin |
+|---|---|---|
+| Browse events | Yes | Yes |
+| Check in via QR code | Yes | Yes |
+| Receive flash sync | Yes | Yes |
+| View attendance history | Yes | Yes |
+| Create/edit/delete events | No | Yes |
+| Toggle event live status | No | Yes |
+| Trigger flash sequences | No | Yes |
+| Configure flash settings | No | Yes |
+| Send event announcements | No | Yes |
+| Manage facilities | No | Yes |
+| Generate admin invitations | No | Yes |
 
 ---
 
-*Built for Fort Hays State University to enhance campus event engagement through technology* 
+Built for Fort Hays State University — CSCI capstone project
